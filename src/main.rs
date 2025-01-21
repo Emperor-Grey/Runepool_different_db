@@ -6,7 +6,7 @@ use api::{
 };
 use axum::{routing::get, Router};
 use chrono::Utc;
-use config::connect::connect_db;
+use config::connect::{connect_db, connect_postgres, initialize_pg_pool};
 use dotenv::dotenv;
 use http::Method;
 use services::spawn::spawn_cron_jobs;
@@ -22,6 +22,7 @@ mod api;
 mod config;
 mod core;
 mod services;
+mod utils;
 
 // /* ************************************************************ */
 // /* ************************************************************ */
@@ -71,19 +72,24 @@ async fn main() {
     dotenv().ok();
     setup_tracing();
 
-    connect_db().await.expect("Failed to connect to database");
-
     tracing::info!(
-        "Env variables are \n{}\n{}",
+        "Env variables are \n{}\n{}\n{}",
         get_midgard_api_url(),
-        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set")
+        std::env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set"),
+        std::env::var("POSTGRES_DATABASE_URL").expect("DATABASE_URL must be set")
     );
+
+    // Initialize both databases
+    connect_db().await.expect("Failed to connect to SurrealDB");
+    initialize_pg_pool(&std::env::var("POSTGRES_DATABASE_URL").expect("POSTGRES_URL must be set"))
+        .await
+        .expect("Failed to connect to PostgreSQL");
 
     println!("Current Utc TimeStamp: {:?}", Utc::now().timestamp());
 
     // !NOTE: Uncomment this if you want to fetch initial data and read the comment above the main
-    // spawn_cron_jobs();
-    // fetch_initial_data().await;
+    spawn_cron_jobs();
+    fetch_initial_data().await;
 
     tokio::spawn(async move {
         let mut hourly_fetcher = HourlyFetcher::new();

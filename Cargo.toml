@@ -29,16 +29,10 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 reqwest = { version = "0.12.12", features = ["json", "blocking"] }
 
 # Now for the database
-# sqlx = { version = "0.8.3", features = [
-#     "runtime-tokio-rustls",
-#     "any",
-#     "tls-native-tls",
-#     "runtime-tokio",
-#     "mysql",
-#     "chrono",
-#     "time",
-# ] }
+sqlx = { version = "0.8.3", features = ["runtime-tokio-rustls", "any", "tls-native-tls", "runtime-tokio", "postgres", "chrono", "time"] }
+mongodb = "3.2.0"
 prkorm = "0.5.4"
+bson = { version = "2", features = ["chrono-0_4"] } # Needed for using chrono datetime in doc
 
 # For error handling but not used to thiserror don't ask me why i'am using it
 anyhow = "1.0.95"   # i have used it btw
