@@ -1,7 +1,6 @@
 use chrono::{DateTime, TimeZone, Utc};
-use prkorm::Table;
 use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
+use surrealdb::sql::Thing;
 
 use super::common::Interval;
 
@@ -51,9 +50,11 @@ mod u64_serialization {
     }
 }
 
-#[derive(Table, Debug, Serialize, Deserialize, FromRow, Clone)]
-#[table_name("`runepool_unit_intervals`")]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunepoolUnitsInterval {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub id: Option<Thing>,
     #[serde(rename = "count", with = "u64_serialization")]
     pub count: u64,
     #[serde(rename = "endTime", with = "timestamp_serialization")]

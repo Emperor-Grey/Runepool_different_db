@@ -1,26 +1,24 @@
+use chrono::{DateTime, Duration, Utc};
+use tokio::time::{self};
+use tracing::{error, info};
+
 use crate::{
     core::models::{
         common::Interval,
         runepool_units_history::{RunepoolUnitsHistoryParams, RunepoolUnitsHistoryResponse},
     },
-    services::{client::get_midgard_api_url, repository::runepool::store_intervals},
+    services::{client::get_midgard_api_url, repository::runepool},
 };
-use chrono::{DateTime, Duration, Utc};
-use sqlx::MySqlPool;
-use tokio::time;
-use tracing::{error, info};
 
 pub struct RunepoolUnitsHistoryCron {
-    pool: MySqlPool,
     interval: Interval,
     count: u32,
     last_fetch_time: Option<DateTime<Utc>>,
 }
 
 impl RunepoolUnitsHistoryCron {
-    pub fn new(pool: MySqlPool) -> Self {
+    pub fn new() -> Self {
         Self {
-            pool,
             interval: Interval::Hour,
             count: 400,
             last_fetch_time: Some(DateTime::from_timestamp(1648771200, 0).unwrap()),
@@ -79,18 +77,19 @@ impl RunepoolUnitsHistoryCron {
 
                     match serde_json::from_str::<RunepoolUnitsHistoryResponse>(&response_text) {
                         Ok(runepool_history) => {
-                            store_intervals(&self.pool, &runepool_history.intervals).await?;
+                            let intervals_len = runepool_history.intervals.len();
+                            let last_time = runepool_history.intervals.last().map(|i| i.end_time);
 
-                            info!(
-                                "Successfully stored {} intervals",
-                                runepool_history.intervals.len()
-                            );
+                            info!("Storing started");
 
-                            if let Some(last_interval) = runepool_history.intervals.last() {
-                                self.last_fetch_time = Some(last_interval.end_time);
+                            runepool::store_intervals(runepool_history.intervals).await?;
+                            info!("Successfully stored {} intervals", intervals_len);
+
+                            if let Some(end_time) = last_time {
+                                self.last_fetch_time = Some(end_time);
                                 info!(
                                     "Successfully updated runepool units history. URL: {} Last fetch time: {}",
-                                    url, last_interval.end_time
+                                    url, end_time
                                 );
                             }
                             break Ok(());
@@ -149,7 +148,8 @@ impl RunepoolUnitsHistoryCron {
 
                 match serde_json::from_str::<RunepoolUnitsHistoryResponse>(&response_text) {
                     Ok(runepool_history) => {
-                        store_intervals(&self.pool, &runepool_history.intervals).await?;
+                        info!("Storing started");
+                        runepool::store_intervals(runepool_history.intervals).await?;
                         info!("Successfully stored latest hour runepool units data");
                         Ok(())
                     }

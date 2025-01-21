@@ -1,19 +1,16 @@
 use chrono::{DateTime, Duration, Utc};
-use sqlx::MySqlPool;
 use tokio::time;
 use tracing::{error, info};
 
 use crate::services::jobs::cron::runepool_units_history_cron::RunepoolUnitsHistoryCron;
 
 pub struct HourlyFetcher {
-    pool: MySqlPool,
     last_run: DateTime<Utc>,
 }
 
 impl HourlyFetcher {
-    pub fn new(pool: MySqlPool) -> Self {
+    pub fn new() -> Self {
         Self {
-            pool,
             last_run: Utc::now(),
         }
     }
@@ -30,8 +27,7 @@ impl HourlyFetcher {
                 self.last_run = now;
 
                 // Fetch runepool units history
-                let runepool_pool = self.pool.clone();
-                let mut runepool_cron = RunepoolUnitsHistoryCron::new(runepool_pool);
+                let mut runepool_cron = RunepoolUnitsHistoryCron::new();
                 if let Err(e) = runepool_cron.fetch_latest_hour().await {
                     error!("Failed to fetch runepool units history: {}", e);
                 }
