@@ -6,7 +6,7 @@ use api::{
 };
 use axum::{routing::get, Router};
 use chrono::Utc;
-use config::connect::{connect_db, connect_postgres, initialize_pg_pool};
+use config::connect::{connect_db, connect_mongodb, connect_rocksdb, initialize_pg_pool};
 use dotenv::dotenv;
 use http::Method;
 use services::spawn::spawn_cron_jobs;
@@ -73,17 +73,26 @@ async fn main() {
     setup_tracing();
 
     tracing::info!(
-        "Env variables are \n{}\n{}\n{}",
+        "Env variables are \n{}\n{}\n{}\n{}\n",
         get_midgard_api_url(),
         std::env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set"),
-        std::env::var("POSTGRES_DATABASE_URL").expect("DATABASE_URL must be set")
+        std::env::var("POSTGRES_DATABASE_URL").expect("DATABASE_URL must be set"),
+        std::env::var("MONGODB_DATABASE_URL").expect("DATABASE_URL must be set"),
     );
 
-    // Initialize both databases
+    // Initialize Surreal databases
     connect_db().await.expect("Failed to connect to SurrealDB");
+
     initialize_pg_pool(&std::env::var("POSTGRES_DATABASE_URL").expect("POSTGRES_URL must be set"))
         .await
         .expect("Failed to connect to PostgreSQL");
+
+    connect_mongodb((&std::env::var("MONGODB_DATABASE_URL").expect("MONGODB_URL must be set")))
+        .await
+        .expect("Failed to connect to MongoDB");
+
+    connect_rocksdb((&std::env::var("ROCKSDB_DATABASE_URL").expect("MONGODB_URL must be set")))
+        .await;
 
     println!("Current Utc TimeStamp: {:?}", Utc::now().timestamp());
 

@@ -1,8 +1,12 @@
-use std::{env, time::Duration};
-
+use mongodb::{
+    bson::doc,
+    options::{ClientOptions, ServerApi, ServerApiVersion},
+    Client as MongoClient,
+};
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::{env, time::Duration};
 use surrealdb::{
     engine::remote::ws::{Client, Wss},
     opt::auth::{Jwt, Root},
@@ -17,7 +21,7 @@ pub async fn connect_db() -> Result<()> {
     let database_url = env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set");
 
     match DB.connect::<Wss>(&database_url).await {
-        Ok(_) => info!("Connected to DB"),
+        Ok(_) => info!("Connected to Surreal DB"),
         Err(e) => error!("Failed to connect to DB: {}", e),
     }
 
@@ -43,7 +47,41 @@ pub async fn connect_db() -> Result<()> {
     Ok(())
 }
 
-pub async fn connect_postgres(url: &str) -> sqlx::Result<()> {
+pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
+    let mut client_options = ClientOptions::parse(url).await?;
+    // Set the server_api field of the client_options object to set the version of the Stable API on the client
+    let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
+    client_options.server_api = Some(server_api);
+    // Get a handle to the cluster
+    let client = MongoClient::with_options(client_options)?;
+    // Ping the server to see if you can connect to the cluster
+    client
+        .database("admin")
+        .run_command(doc! {"ping": 1})
+        .await?;
+
+    info!("Connected to MongoDB!");
+    Ok(())
+}
+
+pub async fn connect_rocksdb(url: &str) {
+    let mut options = rocksdb::Options::default();
+    options.create_if_missing(true);
+
+    // Try opening the RocksDB database at the given URL
+    match rocksdb::DB::open(&options, url) {
+        Ok(db) => {
+            info!("Successfully connected to RocksDB at {}", url);
+            // Example: db.put(b"key", b"value").unwrap();
+        }
+        Err(e) => {
+            error!("Failed to connect to RocksDB at {}: {}", url, e);
+        }
+    }
+}
+pub async fn connect_leveldb(url: &str) {}
+
+pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(3))
@@ -51,19 +89,8 @@ pub async fn connect_postgres(url: &str) -> sqlx::Result<()> {
         .await
         .expect("Failed to connect to database");
 
-    tracing::info!("Connected to postgres");
+    tracing::info!("Connected to PostgreSQL...");
 
-    Ok(())
-}
-
-pub async fn connect_mongodb(url: &str) {}
-pub async fn connect_rocksdb(url: &str) {}
-pub async fn connect_leveldb(url: &str) {}
-
-pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
-    let pool = PgPoolOptions::new().max_connections(5).connect(url).await?;
-
-    // Safe initialization
     PG_POOL
         .set(pool.clone())
         .expect("PG_POOL already initialized");
