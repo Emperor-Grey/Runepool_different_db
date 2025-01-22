@@ -1,2 +1,2 @@
 Recovered manifest with next_file=3 manifest_num=2 log_num=0 prev_log_num=0 last_seq=0
-reusing manifest "./leveldb/MANIFEST-000001"
+reusing manifest "./data/leveldb/MANIFEST-000001"
