@@ -10,14 +10,14 @@ use crate::{
     services::{client::get_midgard_api_url, repository::runepool},
 };
 
-pub struct RunepoolUnitsHistoryCron {
+pub struct _RunepoolUnitsHistoryCron {
     interval: Interval,
     count: u32,
     last_fetch_time: Option<DateTime<Utc>>,
 }
 
-impl RunepoolUnitsHistoryCron {
-    pub fn new() -> Self {
+impl _RunepoolUnitsHistoryCron {
+    pub fn _new() -> Self {
         Self {
             interval: Interval::Hour,
             count: 400,
@@ -25,9 +25,9 @@ impl RunepoolUnitsHistoryCron {
         }
     }
 
-    pub async fn start(&mut self) -> Result<(), anyhow::Error> {
+    pub async fn _start(&mut self) -> Result<(), anyhow::Error> {
         loop {
-            if let Err(e) = self.fetch_and_store().await {
+            if let Err(e) = self._fetch_and_store().await {
                 error!("Failed to fetch and store runepool units history: {}", e);
                 time::sleep(Duration::seconds(3).to_std().unwrap()).await;
                 continue;
@@ -36,7 +36,7 @@ impl RunepoolUnitsHistoryCron {
             time::sleep(Duration::seconds(3).to_std().unwrap()).await;
         }
     }
-    async fn fetch_and_store(&mut self) -> Result<(), anyhow::Error> {
+    async fn _fetch_and_store(&mut self) -> Result<(), anyhow::Error> {
         let client = reqwest::Client::new();
 
         loop {
@@ -114,8 +114,7 @@ impl RunepoolUnitsHistoryCron {
         }
     }
 
-    // Box Pin to avoid indefinite recursion
-    pub async fn fetch_latest_hour(&mut self) -> Result<(), anyhow::Error> {
+    pub async fn _fetch_latest_hour(&mut self) -> Result<(), anyhow::Error> {
         let now = Utc::now();
         let one_hour_ago = now - Duration::hours(1);
 
@@ -143,7 +142,7 @@ impl RunepoolUnitsHistoryCron {
                 if response_text.contains("slow down") {
                     tracing::warn!("Rate limited, waiting for 5 seconds before retry...");
                     time::sleep(Duration::seconds(5).to_std().unwrap()).await;
-                    return Box::pin(self.fetch_latest_hour()).await;
+                    return Box::pin(self._fetch_latest_hour()).await;
                 }
 
                 match serde_json::from_str::<RunepoolUnitsHistoryResponse>(&response_text) {

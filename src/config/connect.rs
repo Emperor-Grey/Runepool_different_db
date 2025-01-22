@@ -1,21 +1,20 @@
 use mongodb::{
+    Client as MongoClient,
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion},
-    Client as MongoClient,
 };
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{
     env,
-    path::{self, Path},
     sync::{Arc, Mutex},
     time::Duration,
 };
 use surrealdb::{
-    engine::remote::ws::{Client, Wss},
-    opt::auth::{Jwt, Root},
     Result, Surreal,
+    engine::remote::ws::{Client, Wss},
+    opt::auth::Root,
 };
 use tracing::{error, info};
 
@@ -23,6 +22,7 @@ pub static DB: Lazy<Surreal<Client>> = Lazy::new(Surreal::init);
 pub static PG_POOL: OnceCell<PgPool> = OnceCell::new();
 pub static ROCKS_DB: OnceCell<Arc<rocksdb::DB>> = OnceCell::new();
 pub static LEVEL_DB: OnceCell<Arc<Mutex<rusty_leveldb::DB>>> = OnceCell::new();
+pub static MONGO_CLIENT: OnceCell<mongodb::Client> = OnceCell::new();
 
 pub async fn connect_db() -> Result<()> {
     let database_url = env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set");
@@ -55,32 +55,39 @@ pub async fn connect_db() -> Result<()> {
 }
 
 pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
-    // Use the passed URL parameter instead of hardcoding it
     let mut client_options = ClientOptions::parse(url).await?;
 
-    // Set the server_api field for the Stable API version
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
     client_options.server_api = Some(server_api);
 
-    // Get a handle to the cluster
+    // Create the client
     let client = MongoClient::with_options(client_options)?;
 
-    // Ping the server to see if you can connect to the cluster
+    // Test the connection
     client
         .database("admin")
         .run_command(doc! {"ping": 1})
         .await?;
 
+    // Store the client in the static MONGO_CLIENT
+    if let Err(_) = MONGO_CLIENT.set(client) {
+        error!("Failed to set MongoDB client");
+        return Err(mongodb::error::Error::from(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Failed to initialize MongoDB client",
+        )));
+    }
+
     info!("Connected to MongoDB!");
     Ok(())
 }
+
 pub async fn connect_rocksdb(url: &str) {
     let mut options = rocksdb::Options::default();
     options.create_if_missing(true);
 
-    // Try opening the RocksDB database at the given URL
     match rocksdb::DB::open(&options, url) {
-        Ok(db) => {
+        Ok(_db) => {
             info!("Successfully connected to RocksDB at {}", url);
             // Example: db.put(b"key", b"value").unwrap();
         }
@@ -93,7 +100,7 @@ pub async fn connect_rocksdb(url: &str) {
 pub async fn connect_leveldb(url: &str) {
     let opt = rusty_leveldb::Options::default();
     match rusty_leveldb::DB::open(url, opt) {
-        Ok(db) => {
+        Ok(_db) => {
             info!("Successfully connected to LevelDB at {:?}", url);
         }
         Err(e) => {

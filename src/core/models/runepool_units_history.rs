@@ -1,6 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
 
 use super::common::Interval;
 
@@ -52,9 +51,6 @@ mod u64_serialization {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunepoolUnitsInterval {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub id: Option<Thing>,
     #[serde(rename = "count", with = "u64_serialization")]
     pub count: u64,
     #[serde(rename = "endTime", with = "timestamp_serialization")]

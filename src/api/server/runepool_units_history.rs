@@ -5,11 +5,10 @@ use crate::{
     },
     services::client::get_midgard_api_url,
 };
-use chrono::Utc;
 use reqwest::Client;
 
-pub async fn fetch_initial_runepool_units_history(
-) -> Result<RunepoolUnitsHistoryResponse, reqwest::Error> {
+pub async fn fetch_initial_runepool_units_history()
+-> Result<RunepoolUnitsHistoryResponse, reqwest::Error> {
     let client = Client::new();
     let base_url = get_midgard_api_url();
 
@@ -24,9 +23,8 @@ pub async fn fetch_initial_runepool_units_history(
         .expect("Failed to parse URL");
 
     if let Some(interval) = &params.interval {
-        url.query_pairs_mut().append_pair(
-            "interval",
-            match interval {
+        url.query_pairs_mut()
+            .append_pair("interval", match interval {
                 Interval::FiveMin => "5min",
                 Interval::Hour => "hour",
                 Interval::Day => "day",
@@ -34,8 +32,7 @@ pub async fn fetch_initial_runepool_units_history(
                 Interval::Month => "month",
                 Interval::Quarter => "quarter",
                 Interval::Year => "year",
-            },
-        );
+            });
     }
 
     if let Some(count) = params.count {

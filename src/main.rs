@@ -1,27 +1,18 @@
 #![allow(unused, dead_code)]
-
-use api::routes::runepool::{
-    get_runepool_units_history_from_postgres, get_runepool_units_history_from_rocksdb,
-    get_runepool_units_history_from_surrealdb,
-};
 use api::server::fetch::fetch_and_store_runepool_units_history;
-use axum::{routing::get, Router};
-use chrono::Utc;
+use axum::{Router, routing::get};
 use config::connect::{
     connect_db, connect_leveldb, connect_mongodb, connect_rocksdb, initialize_pg_pool,
 };
 use dotenv::dotenv;
 use http::Method;
-use services::repository::runepool::{
-    get_runepool_units_history_postgres, get_runepool_units_history_rocksdb,
-};
-use services::spawn::spawn_cron_jobs;
-use services::{client::get_midgard_api_url, jobs::cron::hourly_fetcher::HourlyFetcher};
-use std::io::Write;
+use services::client::get_midgard_api_url;
+use services::handlers::mongodb::get_runepool_units_history_from_mongodb;
+use services::handlers::postgres::get_runepool_units_history_from_postgres;
+use services::handlers::surrealdb::get_runepool_units_history_from_surrealdb;
+use std::env;
 use std::net::SocketAddr;
-use std::path::Path;
-use std::{env, fs::OpenOptions};
-use tokio::{net::TcpListener, time::Instant};
+use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -135,16 +126,16 @@ async fn start_server() {
             Method::DELETE,
         ]))
         .route(
-            "/runepool_units_history",
+            "/runepool/surrealdb",
             get(get_runepool_units_history_from_surrealdb),
         )
         .route(
-            "/runepool_units_history/postgres",
+            "/runepool/postgres",
             get(get_runepool_units_history_from_postgres),
         )
         .route(
-            "/runepool_units_history/rocks",
-            get(get_runepool_units_history_from_rocksdb),
+            "/runepool/mongo",
+            get(get_runepool_units_history_from_mongodb),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

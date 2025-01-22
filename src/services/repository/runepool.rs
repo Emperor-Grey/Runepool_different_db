@@ -1,10 +1,13 @@
-use crate::config::connect::{DB, LEVEL_DB, PG_POOL, ROCKS_DB};
+use crate::config::connect::{DB, LEVEL_DB, MONGO_CLIENT, PG_POOL, ROCKS_DB};
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
 use crate::utils::metrics::{
-    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
+    DatabaseOperation, DatabaseType, OperationMetrics, log_db_operation_metrics,
 };
 use anyhow::Result;
+use bson::{Document, doc};
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
+use mongodb::options::FindOptions;
 use sqlx::postgres::PgPool;
 use sqlx::types::time::OffsetDateTime;
 use std::sync::{Arc, Mutex};
@@ -96,19 +99,140 @@ async fn store_surreal_intervals(
 }
 
 async fn store_rocks_intervals(
-    db: Arc<rocksdb::DB>,
-    intervals: Vec<RunepoolUnitsInterval>,
+    _db: Arc<rocksdb::DB>,
+    _intervals: Vec<RunepoolUnitsInterval>,
 ) -> Result<(), anyhow::Error> {
     // ... implementation ...
     Ok(())
 }
 
 async fn store_level_intervals(
-    db: Arc<Mutex<rusty_leveldb::DB>>,
-    intervals: Vec<RunepoolUnitsInterval>,
+    _db: Arc<Mutex<rusty_leveldb::DB>>,
+    _intervals: Vec<RunepoolUnitsInterval>,
 ) -> Result<(), anyhow::Error> {
     // ... implementation ...
     Ok(())
+}
+
+// Store in MongoDB
+async fn store_mongo_intervals(
+    intervals: Vec<RunepoolUnitsInterval>,
+) -> Result<usize, mongodb::error::Error> {
+    let metrics = OperationMetrics::new(
+        DatabaseType::MongoDB,
+        DatabaseOperation::Write,
+        intervals.len(),
+        "runepool units".to_string(),
+    );
+
+    let client = MONGO_CLIENT.get().expect("MongoDB client not initialized");
+    let db = client.database("runepool");
+    let collection = db.collection::<Document>("runepool_unit_intervals");
+
+    let mut stored_count = 0;
+    for interval in intervals {
+        // Check if record exists
+        let filter = doc! {
+            "start_time": interval.start_time,
+            "end_time": interval.end_time
+        };
+
+        let exists = collection.find_one(filter.clone()).await?;
+
+        if exists.is_none() {
+            let doc = doc! {
+                "start_time": interval.start_time,
+                "end_time": interval.end_time,
+                "count": interval.count as i64,
+                "units": interval.units as i64,
+                "created_at": Utc::now()
+            };
+
+            collection.insert_one(doc).await?;
+            stored_count += 1;
+        }
+    }
+
+    metrics.finish();
+    Ok(stored_count)
+}
+pub async fn get_runepool_units_history_mongodb(
+    limit: u32,
+    offset: u32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    min_units: Option<u64>,
+    sort_field: &str,
+    sort_order: &str,
+) -> Result<Vec<RunepoolUnitsInterval>, mongodb::error::Error> {
+    let metrics = OperationMetrics::new(
+        DatabaseType::MongoDB,
+        DatabaseOperation::Read,
+        limit as usize,
+        "runepool units".to_string(),
+    );
+
+    let client = MONGO_CLIENT.get().expect("MongoDB client not initialized");
+    let db = client.database("runepool");
+    let collection = db.collection::<Document>("runepool_unit_intervals");
+
+    let mut filter = doc! {};
+
+    if let (Some(start), Some(end)) = (start_time, end_time) {
+        filter = doc! {
+            "start_time": { "$gte": start },
+            "end_time": { "$lte": end }
+        };
+    }
+
+    if let Some(units) = min_units {
+        filter.insert("units", doc! { "$gt": units as i64 });
+    }
+
+    let sort_direction = if sort_order.to_lowercase() == "desc" {
+        -1
+    } else {
+        1
+    };
+    let sort = doc! { sort_field: sort_direction };
+
+    let find_options = FindOptions::builder()
+        .sort(sort)
+        .skip(offset as u64)
+        .limit(limit as i64)
+        .build();
+
+    let start_time = Instant::now();
+    let mut cursor = collection.find(filter).with_options(find_options).await?;
+
+    let mut results = Vec::new();
+    while let Some(doc) = cursor.try_next().await? {
+        let interval = RunepoolUnitsInterval {
+            start_time: doc
+                .get("start_time")
+                .unwrap()
+                .as_datetime()
+                .unwrap()
+                .to_chrono(),
+            end_time: doc
+                .get("end_time")
+                .unwrap()
+                .as_datetime()
+                .unwrap()
+                .to_chrono(),
+            count: doc.get("count").unwrap().as_i64().unwrap() as u64,
+            units: doc.get("units").unwrap().as_i64().unwrap() as u64,
+        };
+        results.push(interval);
+    }
+
+    log_db_operation_metrics(
+        &format!("read_intervals_{}_records", results.len()),
+        start_time,
+    );
+
+    metrics.finish();
+    Ok(results)
 }
 
 // Main store function that coordinates both storage operations
@@ -196,12 +320,18 @@ pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<()
         }
     });
 
-    let (pg_result, surreal_result, rocks_result, level_result) =
-        tokio::join!(pg_task, surreal_task, rocks_task, level_task);
+    let (pg_result, surreal_result, rocks_result, level_result, mongo_result) =
+        tokio::join!(pg_task, surreal_task, rocks_task, level_task, mongo_task);
 
     // Handle results
-    match (pg_result, surreal_result, rocks_result, level_result) {
-        (Ok(Ok(())), Ok(Ok(())), Ok(Ok(())), Ok(Ok(()))) => Ok(()),
+    match (
+        pg_result,
+        surreal_result,
+        rocks_result,
+        level_result,
+        mongo_result,
+    ) {
+        (Ok(Ok(())), Ok(Ok(())), Ok(Ok(())), Ok(Ok(())), Ok(Ok(()))) => Ok(()),
         _ => Err(anyhow::anyhow!("One or more storage operations failed")),
     }
 }
@@ -306,10 +436,10 @@ pub async fn get_runepool_units_history_postgres(
     Ok(result)
 }
 
-pub async fn get_runepool_units_history_rocksdb(
+pub async fn _get_runepool_units_history_rocksdb(
     db: Arc<rocksdb::DB>,
     limit: u32,
-    offset: u32,
+    _offset: u32,
     start_time: Option<DateTime<Utc>>,
     end_time: Option<DateTime<Utc>>,
     min_units: Option<u64>,
@@ -329,7 +459,7 @@ pub async fn get_runepool_units_history_rocksdb(
             break;
         }
 
-        let (key, value) = result?;
+        let (_key, value) = result?;
         let interval: RunepoolUnitsInterval = serde_json::from_slice(&value)?;
 
         // Apply filters
