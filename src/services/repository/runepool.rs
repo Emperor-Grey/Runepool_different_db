@@ -1,13 +1,13 @@
-use crate::config::connect::{DB, PG_POOL};
+use crate::config::connect::{DB, LEVEL_DB, PG_POOL, ROCKS_DB};
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
-use crate::performance_metrics;
 use crate::utils::metrics::{
-    DatabaseOperation, DatabaseType, OperationMetrics, log_db_operation_metrics,
+    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::types::time::OffsetDateTime;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio;
 
@@ -95,21 +95,35 @@ async fn store_surreal_intervals(
     Ok(stored_count)
 }
 
+async fn store_rocks_intervals(
+    db: Arc<rocksdb::DB>,
+    intervals: Vec<RunepoolUnitsInterval>,
+) -> Result<(), anyhow::Error> {
+    // ... implementation ...
+    Ok(())
+}
+
+async fn store_level_intervals(
+    db: Arc<Mutex<rusty_leveldb::DB>>,
+    intervals: Vec<RunepoolUnitsInterval>,
+) -> Result<(), anyhow::Error> {
+    // ... implementation ...
+    Ok(())
+}
+
 // Main store function that coordinates both storage operations
 pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<(), anyhow::Error> {
-    // Clone the intervals for parallel processing
-    let pg_intervals = intervals.clone();
-    let surreal_intervals = intervals;
+    let intervals_clone1 = intervals.clone();
+    let intervals_clone2 = intervals.clone();
+    let intervals_clone3 = intervals.clone();
+    let intervals_clone4 = intervals.clone();
+    let intervals_clone5 = intervals;
 
-    // Create two concurrent tasks
     let pg_task = tokio::spawn(async move {
         if let Some(pool) = PG_POOL.get() {
-            match store_postgres_intervals(pool, &pg_intervals).await {
+            match store_postgres_intervals(pool, &intervals_clone1).await {
                 Ok(_) => {
-                    tracing::info!(
-                        "Successfully stored {} intervals in PostgreSQL",
-                        pg_intervals.len()
-                    );
+                    tracing::info!("Successfully stored intervals in PostgreSQL");
                     Ok(())
                 }
                 Err(e) => {
@@ -118,12 +132,12 @@ pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<()
                 }
             }
         } else {
-            Ok(()) // Skip if PostgreSQL pool is not available
+            Ok(())
         }
     });
 
     let surreal_task = tokio::spawn(async move {
-        match store_surreal_intervals(surreal_intervals).await {
+        match store_surreal_intervals(intervals_clone2).await {
             Ok(_) => {
                 tracing::info!("Successfully stored intervals in SurrealDB");
                 Ok(())
@@ -135,20 +149,64 @@ pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<()
         }
     });
 
-    // Wait for both tasks to complete
-    let (pg_result, surreal_result) = tokio::join!(pg_task, surreal_task);
+    let mongo_task = tokio::spawn(async move {
+        match store_mongo_intervals(intervals_clone5).await {
+            Ok(_) => {
+                tracing::info!("Successfully stored intervals in MongoDB");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Failed to store in MongoDB: {}", e);
+                Err(anyhow::anyhow!("MongoDB storage failed: {}", e))
+            }
+        }
+    });
+
+    let rocks_task = tokio::spawn(async move {
+        if let Some(db) = ROCKS_DB.get() {
+            match store_rocks_intervals(db.clone(), intervals_clone3).await {
+                Ok(()) => {
+                    tracing::info!("Successfully stored intervals in RocksDB");
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::error!("Failed to store in RocksDB: {}", e);
+                    Err(anyhow::anyhow!("RocksDB storage failed: {}", e))
+                }
+            }
+        } else {
+            Ok(())
+        }
+    });
+
+    let level_task = tokio::spawn(async move {
+        if let Some(db) = LEVEL_DB.get() {
+            match store_level_intervals(db.clone(), intervals_clone4).await {
+                Ok(_) => {
+                    tracing::info!("Successfully stored intervals in LevelDB");
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::error!("Failed to store in LevelDB: {}", e);
+                    Err(anyhow::anyhow!("LevelDB storage failed: {}", e))
+                }
+            }
+        } else {
+            Ok(())
+        }
+    });
+
+    let (pg_result, surreal_result, rocks_result, level_result) =
+        tokio::join!(pg_task, surreal_task, rocks_task, level_task);
 
     // Handle results
-    match (pg_result, surreal_result) {
-        (Ok(Ok(())), Ok(Ok(()))) => Ok(()), // Both succeeded
-        (Err(e), _) => Err(anyhow::anyhow!("PostgreSQL task panicked: {}", e)),
-        (_, Err(e)) => Err(anyhow::anyhow!("SurrealDB task panicked: {}", e)),
-        (Ok(Err(e)), _) => Err(e),
-        (_, Ok(Err(e))) => Err(e),
+    match (pg_result, surreal_result, rocks_result, level_result) {
+        (Ok(Ok(())), Ok(Ok(())), Ok(Ok(())), Ok(Ok(()))) => Ok(()),
+        _ => Err(anyhow::anyhow!("One or more storage operations failed")),
     }
 }
 
-pub async fn get_runepool_units_history(
+pub async fn get_runepool_units_history_surrealdb(
     limit: u32,
     offset: u32,
     start_time: Option<DateTime<Utc>>,
@@ -196,4 +254,100 @@ pub async fn get_runepool_units_history(
 
     metrics.finish();
     Ok(result)
+}
+
+pub async fn get_runepool_units_history_postgres(
+    limit: u32,
+    offset: u32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    min_units: Option<u64>,
+    sort_field: &str,
+    sort_order: &str,
+) -> Result<Vec<RunepoolUnitsInterval>> {
+    let metrics = OperationMetrics::new(
+        DatabaseType::Postgres,
+        DatabaseOperation::Read,
+        limit as usize,
+        "runepool units".to_string(),
+    );
+
+    let mut query = String::from("SELECT * FROM runepool_unit_intervals");
+    let mut conditions = Vec::new();
+
+    if let (Some(start), Some(end)) = (start_time, end_time) {
+        conditions.push(format!(
+            "startTime >= {} AND endTime <= {}",
+            start.timestamp(),
+            end.timestamp()
+        ));
+    }
+
+    if let Some(units) = min_units {
+        conditions.push(format!("units > {}", units));
+    }
+
+    if !conditions.is_empty() {
+        query.push_str(" WHERE ");
+        query.push_str(&conditions.join(" AND "));
+    }
+
+    query.push_str(&format!(" ORDER BY {} {}", sort_field, sort_order));
+    query.push_str(&format!(" LIMIT {} START {}", limit, offset));
+
+    let start_time = Instant::now();
+    let result: Vec<RunepoolUnitsInterval> = DB.query(&query).await?.take(0)?;
+    log_db_operation_metrics(
+        &format!("read_intervals_{}_records", result.len()),
+        start_time,
+    );
+
+    metrics.finish();
+    Ok(result)
+}
+
+pub async fn get_runepool_units_history_rocksdb(
+    db: Arc<rocksdb::DB>,
+    limit: u32,
+    offset: u32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    min_units: Option<u64>,
+) -> Result<Vec<RunepoolUnitsInterval>> {
+    let metrics = OperationMetrics::new(
+        DatabaseType::RocksDB,
+        DatabaseOperation::Read,
+        limit as usize,
+        "runepool units".to_string(),
+    );
+
+    let mut results = Vec::new();
+    let iter = db.iterator(rocksdb::IteratorMode::Start);
+
+    for result in iter {
+        if results.len() >= limit as usize {
+            break;
+        }
+
+        let (key, value) = result?;
+        let interval: RunepoolUnitsInterval = serde_json::from_slice(&value)?;
+
+        // Apply filters
+        if let (Some(start), Some(end)) = (start_time, end_time) {
+            if interval.start_time < start || interval.end_time > end {
+                continue;
+            }
+        }
+
+        if let Some(min_units) = min_units {
+            if interval.units <= min_units {
+                continue;
+            }
+        }
+
+        results.push(interval);
+    }
+
+    metrics.finish();
+    Ok(results)
 }

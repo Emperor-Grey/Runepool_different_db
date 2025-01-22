@@ -1,9 +1,10 @@
 #![allow(unused, dead_code)]
 
-use api::{
-    routes::runepool::get_runepool_units_history,
-    server::fetch::fetch_and_store_runepool_units_history,
+use api::routes::runepool::{
+    get_runepool_units_history_from_postgres, get_runepool_units_history_from_rocksdb,
+    get_runepool_units_history_from_surrealdb,
 };
+use api::server::fetch::fetch_and_store_runepool_units_history;
 use axum::{routing::get, Router};
 use chrono::Utc;
 use config::connect::{
@@ -11,6 +12,9 @@ use config::connect::{
 };
 use dotenv::dotenv;
 use http::Method;
+use services::repository::runepool::{
+    get_runepool_units_history_postgres, get_runepool_units_history_rocksdb,
+};
 use services::spawn::spawn_cron_jobs;
 use services::{client::get_midgard_api_url, jobs::cron::hourly_fetcher::HourlyFetcher};
 use std::io::Write;
@@ -76,43 +80,32 @@ async fn main() {
     setup_tracing();
 
     tracing::info!(
-        "Env variables are \n{}\n{}\n{}\n{}\n",
+        "Env variables are \n{}\n{}\n{}\n{}\n{}\n{}\n",
         get_midgard_api_url(),
         std::env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set"),
         std::env::var("POSTGRES_DATABASE_URL").expect("DATABASE_URL must be set"),
         std::env::var("MONGODB_DATABASE_URL").expect("DATABASE_URL must be set"),
+        std::env::var("ROCKSDB_DATABASE_URL").expect("DATABASE_URL must be set"),
+        std::env::var("LEVELDB_DATABASE_URL").expect("DATABASE_URL must be set"),
     );
 
-    // Surreal database
     connect_db().await.expect("Failed to connect to SurrealDB");
 
-    // Postgres database
     initialize_pg_pool(&std::env::var("POSTGRES_DATABASE_URL").expect("POSTGRES_URL must be set"))
         .await
         .expect("Failed to connect to PostgreSQL");
 
-    // MongoDb database
     connect_mongodb(&std::env::var("MONGODB_DATABASE_URL").expect("MONGODB_URL must be set"))
         .await
         .expect("Failed to connect to MongoDB");
 
-    // RocksDb database
-    connect_rocksdb(&std::env::var("ROCKSDB_DATABASE_URL").expect("MONGODB_URL must be set")).await;
+    connect_rocksdb(&std::env::var("ROCKSDB_DATABASE_URL").expect("ROCKSDB_URL must be set")).await;
 
-    // LevelDb database
-    connect_leveldb(Path::new("./leveldb")).await;
-    tracing::info!("Current Utc TimeStamp: {:?}", Utc::now().timestamp());
+    connect_leveldb(&std::env::var("LEVELDB_DATABASE_URL").expect("LEVELDB_URL must be set")).await;
 
-    // !NOTE: Uncomment this if you want to fetch initial data and read the comment above the main
-    spawn_cron_jobs();
-    fetch_initial_data().await;
-
-    tokio::spawn(async move {
-        let mut hourly_fetcher = HourlyFetcher::new();
-        if let Err(e) = hourly_fetcher.start().await {
-            tracing::error!("Hourly fetcher failed: {}", e);
-        }
-    });
+    if let Err(e) = fetch_and_store_initial_data().await {
+        tracing::error!("Failed to fetch and store initial data: {}", e);
+    }
 
     start_server().await;
 }
@@ -127,10 +120,10 @@ fn setup_tracing() {
         .init();
 }
 
-async fn fetch_initial_data() {
+async fn fetch_and_store_initial_data() -> Result<(), anyhow::Error> {
     tracing::info!("Starting initial data fetch...");
-
     fetch_and_store_runepool_units_history().await;
+    Ok(())
 }
 
 async fn start_server() {
@@ -141,7 +134,18 @@ async fn start_server() {
             Method::POST,
             Method::DELETE,
         ]))
-        .route("/runepool_units_history", get(get_runepool_units_history));
+        .route(
+            "/runepool_units_history",
+            get(get_runepool_units_history_from_surrealdb),
+        )
+        .route(
+            "/runepool_units_history/postgres",
+            get(get_runepool_units_history_from_postgres),
+        )
+        .route(
+            "/runepool_units_history/rocks",
+            get(get_runepool_units_history_from_rocksdb),
+        );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(addr).await.unwrap();
@@ -153,31 +157,31 @@ async fn start_server() {
         .unwrap();
 }
 
-pub fn performance_metrics(start_time: Instant, end_time: Instant, message: &str) {
-    let duration = end_time.duration_since(start_time);
+// pub fn performance_metrics(start_time: Instant, end_time: Instant, message: &str) {
+//     let duration = end_time.duration_since(start_time);
 
-    let seconds = duration.as_secs();
-    let milliseconds = duration.subsec_millis();
-    let minutes = seconds / 60;
-    let seconds = seconds % 60;
+//     let seconds = duration.as_secs();
+//     let milliseconds = duration.subsec_millis();
+//     let minutes = seconds / 60;
+//     let seconds = seconds % 60;
 
-    let metrics_message = format!("{} {}m {}s {}ms\n", message, minutes, seconds, milliseconds);
+//     let metrics_message = format!("{} {}m {}s {}ms\n", message, minutes, seconds, milliseconds);
 
-    println!("{}", metrics_message);
+//     println!("{}", metrics_message);
 
-    write_metrics_into_file(metrics_message);
-}
+//     write_metrics_into_file(metrics_message);
+// }
 
-pub fn write_metrics_into_file(metrics_message: String) {
-    let file_path = "performance-metrics.txt";
+// pub fn write_metrics_into_file(metrics_message: String) {
+//     let file_path = "performance-metrics.txt";
 
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(file_path)
-        .expect("Failed to open the file for writing");
+//     let mut file = OpenOptions::new()
+//         .append(true)
+//         .create(true)
+//         .open(file_path)
+//         .expect("Failed to open the file for writing");
 
-    if let Err(e) = file.write_all(metrics_message.as_bytes()) {
-        eprintln!("Error writing to file: {}", e);
-    }
-}
+//     if let Err(e) = file.write_all(metrics_message.as_bytes()) {
+//         eprintln!("Error writing to file: {}", e);
+//     }
+// }

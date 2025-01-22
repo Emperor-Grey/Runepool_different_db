@@ -1,0 +1,8 @@
+[2025-01-22 10:49:46] Time taken for SurrealDB to write runepool units data (400 records) : 3m 48s 561ms
+
+[2025-01-22 10:53:16] Time taken for Postgres to write runepool units data (400 records) : 7m 18s 474ms
+
+[2025-01-22 10:53:52] Time taken for SurrealDB to read runepool units data (30 records) : 0m 0s 239ms
+
+[2025-01-22 10:53:58] Time taken for Postgres to read runepool units data (30 records) : 0m 0s 283ms
+

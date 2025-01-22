@@ -9,6 +9,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
     env,
     path::{self, Path},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use surrealdb::{
@@ -20,6 +21,8 @@ use tracing::{error, info};
 
 pub static DB: Lazy<Surreal<Client>> = Lazy::new(Surreal::init);
 pub static PG_POOL: OnceCell<PgPool> = OnceCell::new();
+pub static ROCKS_DB: OnceCell<Arc<rocksdb::DB>> = OnceCell::new();
+pub static LEVEL_DB: OnceCell<Arc<Mutex<rusty_leveldb::DB>>> = OnceCell::new();
 
 pub async fn connect_db() -> Result<()> {
     let database_url = env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set");
@@ -87,14 +90,14 @@ pub async fn connect_rocksdb(url: &str) {
     }
 }
 
-pub async fn connect_leveldb(path: &Path) {
-    let opt = rusty_leveldb::in_memory();
-    match rusty_leveldb::DB::open(path, opt) {
+pub async fn connect_leveldb(url: &str) {
+    let opt = rusty_leveldb::Options::default();
+    match rusty_leveldb::DB::open(url, opt) {
         Ok(db) => {
-            info!("Successfully connected to LevelDB at {:?}", path);
+            info!("Successfully connected to LevelDB at {:?}", url);
         }
         Err(e) => {
-            error!("Failed to connect to LevelDB at {:?}: {}", path, e);
+            error!("Failed to connect to LevelDB at {:?}: {}", url, e);
             panic!("Failed to connect to LevelDB");
         }
     }
