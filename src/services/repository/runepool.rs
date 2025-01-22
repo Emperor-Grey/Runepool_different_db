@@ -2,7 +2,7 @@ use crate::config::connect::{DB, PG_POOL};
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
 use crate::performance_metrics;
 use crate::utils::metrics::{
-    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
+    DatabaseOperation, DatabaseType, OperationMetrics, log_db_operation_metrics,
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};

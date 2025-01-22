@@ -1,3 +1,4 @@
+-- Add migration script here
 CREATE TABLE runepool_unit_intervals (
 id BIGSERIAL PRIMARY KEY,
 start_time TIMESTAMPTZ NOT NULL,

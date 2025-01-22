@@ -6,7 +6,11 @@ use mongodb::{
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::{env, time::Duration};
+use std::{
+    env,
+    path::{self, Path},
+    time::Duration,
+};
 use surrealdb::{
     engine::remote::ws::{Client, Wss},
     opt::auth::{Jwt, Root},
@@ -48,12 +52,16 @@ pub async fn connect_db() -> Result<()> {
 }
 
 pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
+    // Use the passed URL parameter instead of hardcoding it
     let mut client_options = ClientOptions::parse(url).await?;
-    // Set the server_api field of the client_options object to set the version of the Stable API on the client
+
+    // Set the server_api field for the Stable API version
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
     client_options.server_api = Some(server_api);
+
     // Get a handle to the cluster
     let client = MongoClient::with_options(client_options)?;
+
     // Ping the server to see if you can connect to the cluster
     client
         .database("admin")
@@ -63,7 +71,6 @@ pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
     info!("Connected to MongoDB!");
     Ok(())
 }
-
 pub async fn connect_rocksdb(url: &str) {
     let mut options = rocksdb::Options::default();
     options.create_if_missing(true);
@@ -79,7 +86,19 @@ pub async fn connect_rocksdb(url: &str) {
         }
     }
 }
-pub async fn connect_leveldb(url: &str) {}
+
+pub async fn connect_leveldb(path: &Path) {
+    let opt = rusty_leveldb::in_memory();
+    match rusty_leveldb::DB::open(path, opt) {
+        Ok(db) => {
+            info!("Successfully connected to LevelDB at {:?}", path);
+        }
+        Err(e) => {
+            error!("Failed to connect to LevelDB at {:?}: {}", path, e);
+            panic!("Failed to connect to LevelDB");
+        }
+    }
+}
 
 pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
     let pool = PgPoolOptions::new()

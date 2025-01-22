@@ -1,5 +1,5 @@
 [package]
-name = "catalog-crypto-api"
+name = "db_tester"
 version = "0.1.0"
 edition = "2021"
 
@@ -30,27 +30,19 @@ reqwest = { version = "0.12.12", features = ["json", "blocking"] }
 
 # Now for the database
 sqlx = { version = "0.8.3", features = ["runtime-tokio-rustls", "any", "tls-native-tls", "runtime-tokio", "postgres", "chrono", "time"] }
+surrealdb = {version = "2.1.4", features = ["http","protocol-http"]}
 mongodb = "3.2.0"
-rocksdb = "0.23.0"
+rocksdb = {version = "0.23.0" ,features = []}
+bson = { version = "2", features = ["chrono-0_4"] } # Needed for using chrono datetime in doc for mongodb
+rusty-leveldb ={ version = "3.0.2",features = ["asyncdb-tokio"]}
 prkorm = "0.5.4"
-bson = { version = "2", features = ["chrono-0_4"] } # Needed for using chrono datetime in doc
 
 # For error handling but not used to thiserror don't ask me why i'am using it
 anyhow = "1.0.95"   # i have used it btw
 thiserror = "2.0.11"
-surrealdb = {version = "2.1.4", features = ["http","protocol-http"]}
 once_cell = "1.20.2"
 
-# Test url's
-# Depth History
-# http://localhost:3000/depth_history?date_range=2023-08-01,2023-09-01&liquidity_gt=148940851989623&sort_by=asset_depth&order=ASC&page=2&limit=2
-
-# Earnings History
-# http://localhost:3000/earning_history?page=2&limit=3&date_range=2023-08-01,2023-09-01&sort_by=block_rewards&order=desc&earnings_gt=146109956715&block_rewards_gt=12371026084&node_count_gt=85&pool=AVAX.AVAX
-
-# Swap History
-# http://localhost:3000/swap_history?sort_by=average_slip&order=asc&limit=2&volume_gt=13287134132699&fees_gt=22423040539&page=2&date_range=2023-08-01,2023-09-01
-
+# Test url
 # Runepool Units History
 # http://localhost:3000/runepool_units_history?limit=2&order=asc&sort_by=units&units_gt=0&page=2
-#&date_range=2023-08-01,2023-09-01  !!! give a proper date range ok this one does'nt work
+#&date_range=2023-08-01,2023-09-01  !!! give a proper date range ok this one does'nt work just for reference

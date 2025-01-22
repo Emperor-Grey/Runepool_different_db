@@ -6,13 +6,16 @@ use api::{
 };
 use axum::{routing::get, Router};
 use chrono::Utc;
-use config::connect::{connect_db, connect_mongodb, connect_rocksdb, initialize_pg_pool};
+use config::connect::{
+    connect_db, connect_leveldb, connect_mongodb, connect_rocksdb, initialize_pg_pool,
+};
 use dotenv::dotenv;
 use http::Method;
 use services::spawn::spawn_cron_jobs;
 use services::{client::get_midgard_api_url, jobs::cron::hourly_fetcher::HourlyFetcher};
 use std::io::Write;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::{env, fs::OpenOptions};
 use tokio::{net::TcpListener, time::Instant};
 use tower_http::cors::{Any, CorsLayer};
@@ -80,21 +83,25 @@ async fn main() {
         std::env::var("MONGODB_DATABASE_URL").expect("DATABASE_URL must be set"),
     );
 
-    // Initialize Surreal databases
+    // Surreal database
     connect_db().await.expect("Failed to connect to SurrealDB");
 
+    // Postgres database
     initialize_pg_pool(&std::env::var("POSTGRES_DATABASE_URL").expect("POSTGRES_URL must be set"))
         .await
         .expect("Failed to connect to PostgreSQL");
 
-    connect_mongodb((&std::env::var("MONGODB_DATABASE_URL").expect("MONGODB_URL must be set")))
+    // MongoDb database
+    connect_mongodb(&std::env::var("MONGODB_DATABASE_URL").expect("MONGODB_URL must be set"))
         .await
         .expect("Failed to connect to MongoDB");
 
-    connect_rocksdb((&std::env::var("ROCKSDB_DATABASE_URL").expect("MONGODB_URL must be set")))
-        .await;
+    // RocksDb database
+    connect_rocksdb(&std::env::var("ROCKSDB_DATABASE_URL").expect("MONGODB_URL must be set")).await;
 
-    println!("Current Utc TimeStamp: {:?}", Utc::now().timestamp());
+    // LevelDb database
+    connect_leveldb(Path::new("./leveldb")).await;
+    tracing::info!("Current Utc TimeStamp: {:?}", Utc::now().timestamp());
 
     // !NOTE: Uncomment this if you want to fetch initial data and read the comment above the main
     spawn_cron_jobs();
