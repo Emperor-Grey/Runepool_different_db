@@ -1,30 +1,28 @@
-[2025-01-27 07:36:57] Time taken for MongoDB to write runepool units data (400 records) : 0m 21s 105ms
 
-[2025-01-27 07:40:29] Time taken for Postgres to write runepool units data (400 records) : 3m 53s 262ms
+WRITE OPERATIONS: 
 
-[2025-01-27 07:40:43] Time taken for SurrealDB to write runepool units data (400 records) : 4m 6s 984ms
+[2025-01-27 11:01:09] Time taken for LevelDB to insert rune pool history data (400 records) : 0m 0s 7ms
+[2025-01-27 11:01:09] Time taken for RocksDB to insert runepool units data (400 records) : 0m 0s 21ms
+[2025-01-27 11:01:26] Time taken for MongoDB to insert runepool units data (400 records) : 0m 17s 299ms
+[2025-01-27 11:04:56] Time taken for Postgres to insert runepool units data (400 records) : 3m 47s 268ms
+[2025-01-27 11:05:02] Time taken for SurrealDB to insert runepool units data (400 records) : 3m 53s 453ms
 
-[2025-01-27 08:55:42] Time taken for MongoDB to read runepool units data (30 records) : 0m 0s 30ms
+READ OPERATIONS: 
 
-[2025-01-27 08:55:48] Time taken for Postgres to read runepool units data (30 records) : 0m 0s 420ms
+[2025-01-27 11:05:12] Time taken for LevelDB to read runepool units data (400 records) : 0m 0s 13ms
 
-[2025-01-27 08:56:13] Time taken for SurrealDB to read runepool units data (30 records) : 0m 0s 264ms
+READ OPERATIONS: 
 
-[2025-01-27 08:57:41] Time taken for SurrealDB to read runepool units data (30 records) : 0m 0s 273ms
+[2025-01-27 11:05:16] Time taken for RocksDB to read runepool units data (400 records) : 0m 0s 5ms
 
-[2025-01-27 09:06:25] Time taken for RocksDB to write runepool units data (400 records) : 0m 0s 12ms
+READ OPERATIONS: 
 
-[2025-01-27 09:06:45] Time taken for MongoDB to write runepool units data (400 records) : 0m 20s 97ms
+[2025-01-27 11:05:23] Time taken for MongoDB to read runepool units data (400 records) : 0m 0s 77ms
 
-[2025-01-27 09:10:10] Time taken for Postgres to write runepool units data (400 records) : 3m 45s 783ms
+READ OPERATIONS: 
 
-[2025-01-27 09:10:24] Time taken for SurrealDB to write runepool units data (400 records) : 3m 59s 608ms
+[2025-01-27 11:05:32] Time taken for Postgres to read runepool units data (400 records) : 0m 0s 787ms
 
-[2025-01-27 09:10:39] Time taken for SurrealDB to read runepool units data (30 records) : 0m 0s 260ms
+READ OPERATIONS: 
 
-[2025-01-27 09:10:43] Time taken for Postgres to read runepool units data (30 records) : 0m 0s 257ms
-
-[2025-01-27 09:10:47] Time taken for MongoDB to read runepool units data (30 records) : 0m 0s 24ms
-
-[2025-01-27 09:10:50] Time taken for RocksDB to read runepool units data (30 records) : 0m 0s 0ms
-
+[2025-01-27 11:05:36] Time taken for SurrealDB to read runepool units data (400 records) : 0m 0s 808ms

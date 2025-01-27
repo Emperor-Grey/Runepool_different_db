@@ -1,18 +1,8 @@
-use crate::config::connect::{DB, LEVEL_DB, MONGO_CLIENT, PG_POOL, ROCKS_DB};
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
-use crate::utils::metrics::{
-    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
-};
-use anyhow::Result;
-use bson::{doc, Document};
+use crate::utils::metrics::{DatabaseOperation, DatabaseType, OperationMetrics};
 use chrono::{DateTime, Utc};
-use futures::TryStreamExt;
-use mongodb::options::FindOptions;
 use sqlx::postgres::PgPool;
 use sqlx::types::time::OffsetDateTime;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-use tokio;
 
 pub fn convert_datetime(dt: DateTime<Utc>) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(dt.timestamp()).expect("Valid timestamp")

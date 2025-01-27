@@ -1,28 +1,29 @@
 #![allow(unused, dead_code)]
-use api::server::fetch::fetch_and_store_runepool_units_history;
 use axum::{routing::get, Router};
-use config::connect::{
-    connect_db, connect_leveldb, connect_mongodb, connect_rocksdb, initialize_pg_pool,
+use db_tester::{
+    api::server::fetch::fetch_and_store_runepool_units_history,
+    config::connect::{
+        connect_db, connect_leveldb, connect_mongodb, connect_rocksdb, initialize_pg_pool,
+    },
+    services::{
+        client::get_midgard_api_url,
+        handlers::{
+            leveldb::get_runepool_units_history_from_leveldb,
+            mongodb::get_runepool_units_history_from_mongodb,
+            postgres::get_runepool_units_history_from_postgres,
+            rocksdb::get_runepool_units_history_from_rocksdb,
+            surrealdb::get_runepool_units_history_from_surrealdb,
+        },
+    },
 };
 use dotenv::dotenv;
 use http::Method;
-use services::handlers::mongodb::get_runepool_units_history_from_mongodb;
-use services::handlers::postgres::get_runepool_units_history_from_postgres;
-use services::handlers::surrealdb::get_runepool_units_history_from_surrealdb;
-use services::{
-    client::get_midgard_api_url, handlers::rocksdb::get_runepool_units_history_from_rocksdb,
-};
+
 use std::env;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-mod api;
-mod config;
-mod core;
-mod services;
-mod utils;
 
 // /* ************************************************************ */
 // /* ************************************************************ */
@@ -94,7 +95,12 @@ async fn main() {
 
     connect_rocksdb(&std::env::var("ROCKSDB_DATABASE_URL").expect("ROCKSDB_URL must be set")).await;
 
-    connect_leveldb(&std::env::var("LEVELDB_DATABASE_URL").expect("LEVELDB_URL must be set")).await;
+    if let Err(e) =
+        connect_leveldb(&std::env::var("LEVELDB_DATABASE_URL").expect("LEVELDB_URL must be set"))
+            .await
+    {
+        tracing::error!("Failed to initialize LevelDB: {}", e);
+    }
 
     if let Err(e) = fetch_and_store_initial_data().await {
         tracing::error!("Failed to fetch and store initial data: {}", e);
@@ -142,6 +148,10 @@ async fn start_server() {
         .route(
             "/runepool/rocks",
             get(get_runepool_units_history_from_rocksdb),
+        )
+        .route(
+            "/runepool/level",
+            get(get_runepool_units_history_from_leveldb),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

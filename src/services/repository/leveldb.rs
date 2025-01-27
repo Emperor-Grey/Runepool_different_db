@@ -1,20 +1,26 @@
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
 use crate::utils::metrics::{DatabaseOperation, DatabaseType, OperationMetrics};
 use anyhow::Result;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-// RocksDB Implementation
-pub async fn store_rocks_intervals(
-    db: Arc<rocksdb::DB>,
+pub async fn store_level_intervals(
+    db: Arc<Mutex<rusty_leveldb::DB>>,
     intervals: Vec<RunepoolUnitsInterval>,
 ) -> Result<(), anyhow::Error> {
+    tracing::info!("Starting to store {} intervals in LevelDB", intervals.len());
+
     let metrics = OperationMetrics::new(
-        DatabaseType::RocksDB,
+        DatabaseType::LevelDB,
         DatabaseOperation::Write,
         intervals.len(),
-        "runepool units".to_string(),
+        "rune pool history".to_string(),
     );
 
+    let mut db_lock = db
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Failed to acquire LevelDB lock"))?;
+
+    let mut stored_count = 0;
     for interval in intervals {
         let key = format!(
             "{}:{}",
@@ -23,15 +29,20 @@ pub async fn store_rocks_intervals(
         );
 
         // Check if record exists
-        if db.get(key.as_bytes())?.is_none() {
+        if db_lock.get(key.as_bytes()).is_none() {
             let value = serde_json::to_vec(&interval)?;
-            db.put(key.as_bytes(), value)?;
+            db_lock.put(key.as_bytes(), &value)?;
+            stored_count += 1;
         }
     }
 
     // Ensure data is written to disk
-    db.flush()?;
+    db_lock.flush()?;
 
+    tracing::info!(
+        "Successfully stored {} new intervals in LevelDB",
+        stored_count
+    );
     metrics.finish();
     Ok(())
 }

@@ -1,18 +1,6 @@
-use crate::config::connect::{DB, LEVEL_DB, MONGO_CLIENT, PG_POOL, ROCKS_DB};
+use crate::config::connect::DB;
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
-use crate::utils::metrics::{
-    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
-};
-use anyhow::Result;
-use bson::{doc, Document};
-use chrono::{DateTime, Utc};
-use futures::TryStreamExt;
-use mongodb::options::FindOptions;
-use sqlx::postgres::PgPool;
-use sqlx::types::time::OffsetDateTime;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
-use tokio;
+use crate::utils::metrics::{DatabaseOperation, DatabaseType, OperationMetrics};
 // Store in SurrealDB
 pub async fn store_surreal_intervals(
     intervals: Vec<RunepoolUnitsInterval>,

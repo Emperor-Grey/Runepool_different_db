@@ -1,5 +1,4 @@
-use chrono::{DateTime, Utc};
-use sqlx::types::time::OffsetDateTime;
+use chrono::Utc;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::Instant;
@@ -46,7 +45,7 @@ impl OperationMetrics {
         let duration = self.start_time.elapsed();
         let operation_type = match self.operation {
             DatabaseOperation::Read => "read",
-            DatabaseOperation::Write => "write",
+            DatabaseOperation::Write => "insert",
         };
 
         let db_name = match self.db_type {
@@ -58,7 +57,7 @@ impl OperationMetrics {
         };
 
         let message = format!(
-            "Time taken for {} to {} {} data ({} records) : {}m {}s {}ms\n",
+            "Time taken for {} to {} {} data ({} records) : {}m {}s {}ms",
             db_name,
             operation_type,
             self.data_type,
@@ -67,6 +66,8 @@ impl OperationMetrics {
             duration.as_secs() % 60,
             duration.subsec_millis()
         );
+
+        tracing::info!("{}", message);
 
         if let Err(e) = write_to_metrics_file(&message) {
             tracing::error!("Failed to write metrics to file: {}", e);
@@ -83,6 +84,20 @@ fn write_to_metrics_file(message: &str) -> std::io::Result<()> {
 
     // Add timestamp to the message
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
+
+    // Check if this is a write or read operation
+    if message.contains("insert") {
+        if !std::path::Path::new(file_path).exists()
+            || std::fs::read_to_string(file_path)?.is_empty()
+        {
+            writeln!(file, "\nWRITE OPERATIONS: \n")?;
+        }
+    } else if message.contains("read") {
+        if !message.contains("READ OPERATIONS:") {
+            writeln!(file, "\nREAD OPERATIONS: \n")?;
+        }
+    }
+
     writeln!(file, "[{}] {}", timestamp, message)?;
     Ok(())
 }

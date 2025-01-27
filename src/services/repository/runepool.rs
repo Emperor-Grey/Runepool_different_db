@@ -8,55 +8,16 @@ use bson::{doc, Document};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use mongodb::options::FindOptions;
-use sqlx::postgres::PgPool;
-use sqlx::types::time::OffsetDateTime;
+use rusty_leveldb::LdbIterator;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio;
 
+use super::leveldb::store_level_intervals;
 use super::mongodb::store_mongo_intervals;
 use super::postgres::store_postgres_intervals;
+use super::rocksdb::store_rocks_intervals;
 use super::surrealdb::store_surreal_intervals;
-
-pub async fn store_rocks_intervals(
-    db: Arc<rocksdb::DB>,
-    intervals: Vec<RunepoolUnitsInterval>,
-) -> Result<(), anyhow::Error> {
-    let metrics = OperationMetrics::new(
-        DatabaseType::RocksDB,
-        DatabaseOperation::Write,
-        intervals.len(),
-        "runepool units".to_string(),
-    );
-
-    for interval in intervals {
-        let key = format!(
-            "{}:{}",
-            interval.start_time.timestamp(),
-            interval.end_time.timestamp()
-        );
-
-        // Check if record exists
-        if db.get(key.as_bytes())?.is_none() {
-            let value = serde_json::to_vec(&interval)?;
-            db.put(key.as_bytes(), value)?;
-        }
-    }
-
-    // Ensure data is written to disk
-    db.flush()?;
-
-    metrics.finish();
-    Ok(())
-}
-
-async fn store_level_intervals(
-    _db: Arc<Mutex<rusty_leveldb::DB>>,
-    _intervals: Vec<RunepoolUnitsInterval>,
-) -> Result<(), anyhow::Error> {
-    // ... implementation ...
-    Ok(())
-}
 
 pub async fn get_runepool_units_history_mongodb(
     limit: u32,
@@ -201,9 +162,11 @@ pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<()
                 }
             }
         } else {
+            tracing::info!("might be rocks db not initialized");
             Ok(()) // This silently succeeds when RocksDB is not initialized!
         }
     });
+
     let level_task = tokio::spawn(async move {
         if let Some(db) = LEVEL_DB.get() {
             match store_level_intervals(db.clone(), intervals_clone4).await {
@@ -380,5 +343,81 @@ pub async fn get_runepool_units_history_rocksdb(
     }
 
     metrics.finish();
+    Ok(results)
+}
+
+pub async fn get_runepool_units_history_leveldb(
+    db: Arc<Mutex<rusty_leveldb::DB>>,
+    limit: u32,
+    _offset: u32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    min_units: Option<u64>,
+) -> Result<Vec<RunepoolUnitsInterval>> {
+    let metrics = OperationMetrics::new(
+        DatabaseType::LevelDB,
+        DatabaseOperation::Read,
+        limit as usize,
+        "runepool units".to_string(),
+    );
+
+    let operation_start = Instant::now();
+    let mut results = Vec::new();
+
+    // Acquire lock on the database
+    let mut db_lock = db
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Failed to acquire LevelDB lock"))?;
+
+    // Create iterator for the database using new_iter
+    let mut iter = db_lock
+        .new_iter()
+        .map_err(|e| anyhow::anyhow!("Failed to create iterator: {}", e))?;
+
+    // Seek to first record
+    iter.seek_to_first();
+
+    // Iterate through the database
+    while let Some((_key_bytes, value_bytes)) = iter.next() {
+        if results.len() >= limit as usize {
+            break;
+        }
+
+        // Convert value bytes to Vec<u8> for deserialization
+        let value_vec = value_bytes.to_vec();
+
+        // Deserialize the value into RunepoolUnitsInterval
+        let interval: RunepoolUnitsInterval = match serde_json::from_slice(&value_vec) {
+            Ok(interval) => interval,
+            Err(e) => {
+                tracing::error!("Failed to deserialize interval from LevelDB: {}", e);
+                continue;
+            }
+        };
+
+        // Apply time range filter if specified
+        if let (Some(filter_start), Some(filter_end)) = (start_time, end_time) {
+            if interval.start_time < filter_start || interval.end_time > filter_end {
+                continue;
+            }
+        }
+
+        // Apply minimum units filter if specified
+        if let Some(min_units) = min_units {
+            if interval.units <= min_units {
+                continue;
+            }
+        }
+
+        results.push(interval);
+    }
+
+    // Log metrics
+    log_db_operation_metrics(
+        &format!("read_intervals_{}_records", results.len()),
+        operation_start,
+    );
+    metrics.finish();
+
     Ok(results)
 }

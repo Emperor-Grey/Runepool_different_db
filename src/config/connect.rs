@@ -28,7 +28,7 @@ pub async fn connect_db() -> Result<()> {
     let database_url = env::var("SURREAL_DATABASE_URL").expect("DATABASE_URL must be set");
 
     match DB.connect::<Wss>(&database_url).await {
-        Ok(_) => info!("Connected to Surreal DB"),
+        Ok(_) => info!("Connection successfull"),
         Err(e) => error!("Failed to connect to DB: {}", e),
     }
 
@@ -47,7 +47,7 @@ pub async fn connect_db() -> Result<()> {
     let database = env::var("SURREAL_DATABASE").unwrap_or_else(|_| String::from("runepool"));
 
     match DB.use_ns(&namespace).use_db(&database).await {
-        Ok(_) => info!("Using namespace and database"),
+        Ok(_) => {}
         Err(e) => error!("Failed to set namespace and database: {}", e),
     }
 
@@ -58,7 +58,7 @@ pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
     let mut client_options = ClientOptions::parse(url).await?;
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
     client_options.server_api = Some(server_api);
-    
+
     let client = MongoClient::with_options(client_options)?;
 
     // Test the connection
@@ -100,15 +100,23 @@ pub async fn connect_rocksdb(url: &str) -> std::result::Result<(), anyhow::Error
     }
 }
 
-pub async fn connect_leveldb(url: &str) {
-    let opt = rusty_leveldb::Options::default();
+pub async fn connect_leveldb(url: &str) -> std::result::Result<(), anyhow::Error> {
+    let mut opt = rusty_leveldb::Options::default();
+    opt.create_if_missing = true;
+
     match rusty_leveldb::DB::open(url, opt) {
-        Ok(_db) => {
-            info!("Successfully connected to LevelDB at {:?}", url);
+        Ok(db) => {
+            let db_instance = Arc::new(Mutex::new(db));
+            if LEVEL_DB.set(db_instance).is_err() {
+                tracing::error!("Failed to initialize LEVEL_DB");
+                return Err(anyhow::anyhow!("Failed to set LEVEL_DB instance"));
+            }
+            tracing::info!("Successfully connected to LevelDB at {}", url);
+            Ok(())
         }
         Err(e) => {
-            error!("Failed to connect to LevelDB at {:?}: {}", url, e);
-            panic!("Failed to connect to LevelDB");
+            tracing::error!("Failed to connect to LevelDB at {}: {}", url, e);
+            Err(anyhow::anyhow!("Failed to connect to LevelDB: {}", e))
         }
     }
 }
