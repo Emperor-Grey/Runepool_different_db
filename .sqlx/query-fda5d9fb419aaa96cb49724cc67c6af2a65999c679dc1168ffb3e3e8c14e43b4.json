@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units)\n             VALUES ($1, $2, $3, $4)\n             ON CONFLICT (start_time, end_time) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fda5d9fb419aaa96cb49724cc67c6af2a65999c679dc1168ffb3e3e8c14e43b4"
+}

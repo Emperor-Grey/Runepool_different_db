@@ -31,29 +31,19 @@ pub async fn store_postgres_intervals(
 
     let mut stored_count = 0;
     for interval in intervals {
-        // Check if record exists
-        let exists = sqlx::query!(
-            "SELECT COUNT(*) FROM runepool_unit_intervals WHERE start_time = $1 AND end_time = $2",
+        let res = sqlx::query!(
+            "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (start_time, end_time) DO NOTHING",
             convert_datetime(interval.start_time),
-            convert_datetime(interval.end_time)
+            convert_datetime(interval.end_time),
+            interval.count as i64,
+            interval.units as i64
         )
-        .fetch_one(pool)
-        .await?
-        .count
-        .unwrap_or(0)
-            > 0;
-
-        if !exists {
-            sqlx::query!(
-                "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units) 
-                 VALUES ($1, $2, $3, $4)",
-                convert_datetime(interval.start_time),
-                convert_datetime(interval.end_time),
-                interval.count as i64,
-                interval.units as i64
-            )
-            .execute(pool)
-            .await?;
+        .execute(pool)
+        .await?;
+        
+        if res.rows_affected() > 0 {
             stored_count += 1;
         }
     }
@@ -61,3 +51,47 @@ pub async fn store_postgres_intervals(
     metrics.finish();
     Ok(stored_count)
 }
+
+// pub async fn store_postgres_intervals(
+//     pool: &PgPool,
+//     intervals: &[RunepoolUnitsInterval],
+// ) -> sqlx::Result<usize> {
+//     let metrics = OperationMetrics::new(
+//         DatabaseType::Postgres,
+//         DatabaseOperation::Write,
+//         intervals.len(),
+//         "runepool units".to_string(),
+//     );
+
+//     let mut stored_count = 0;
+//     for interval in intervals {
+//         // Check if record exists
+//         let exists = sqlx::query!(
+//             "SELECT COUNT(*) FROM runepool_unit_intervals WHERE start_time = $1 AND end_time = $2",
+//             convert_datetime(interval.start_time),
+//                 convert_datetime(interval.end_time)
+//             )
+//             .fetch_one(pool)
+//             .await?
+//             .count
+//             .unwrap_or(0)
+//                 > 0;
+    
+//         if !exists {
+//             sqlx::query!(
+//                 "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units) 
+//                  VALUES ($1, $2, $3, $4)",
+//                 convert_datetime(interval.start_time),
+//                 convert_datetime(interval.end_time),
+//                 interval.count as i64,
+//                 interval.units as i64
+//             )
+//             .execute(pool)
+//             .await?;
+//             stored_count += 1;
+//         }
+//     }
+
+//     metrics.finish();
+//     Ok(stored_count)
+// }

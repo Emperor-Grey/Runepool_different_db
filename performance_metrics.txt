@@ -1,0 +1,2 @@
+[2025-01-27 07:36:57] Time taken for MongoDB to write runepool units data (400 records) : 0m 21s 105ms
+

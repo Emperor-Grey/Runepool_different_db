@@ -120,7 +120,8 @@ pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
         .await?;
 
     tracing::info!("Connected to PostgreSQL...");
-
+    sqlx::migrate!("./migrations").run(&pool).await?;
+    
     // Test the connection with a simple query
     sqlx::query("SELECT 1").fetch_one(&pool).await?;
 
