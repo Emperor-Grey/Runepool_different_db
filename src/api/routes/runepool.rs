@@ -1,70 +1,52 @@
-use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
-use crate::utils::metrics::{
-    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
+use crate::services::handlers::{
+    leveldb::get_runepool_units_history_from_leveldb,
+    mongodb::get_runepool_units_history_from_mongodb,
+    postgres::get_runepool_units_history_from_postgres,
+    rocksdb::get_runepool_units_history_from_rocksdb,
+    surrealdb::get_runepool_units_history_from_surrealdb,
 };
-use anyhow::Result;
-use chrono::{DateTime, Utc};
-use serde_json;
-use std::sync::Arc;
-use std::time::Instant;
+use axum::{routing::get, Router};
+use http::Method;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 
-pub async fn get_runepool_units_history_rocksdb(
-    db: Arc<rocksdb::DB>,
-    limit: u32,
-    offset: u32,
-    start_time: Option<DateTime<Utc>>,
-    end_time: Option<DateTime<Utc>>,
-    min_units: Option<u64>,
-) -> Result<Vec<RunepoolUnitsInterval>> {
-    let metrics = OperationMetrics::new(
-        DatabaseType::RocksDB,
-        DatabaseOperation::Read,
-        limit as usize,
-        "runepool units".to_string(),
-    );
 
-    let start_time_metric = Instant::now();
-    let mut results = Vec::new();
-    let mut skipped = 0;
+pub async fn start_server() {
+    let app = Router::new()
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods([
+            Method::GET,
+            Method::PUT,
+            Method::POST,
+            Method::DELETE,
+        ]))
+        .route(
+            "/runepool/surrealdb",
+            get(get_runepool_units_history_from_surrealdb),
+        )
+        .route(
+            "/runepool/postgres",
+            get(get_runepool_units_history_from_postgres),
+        )
+        .route(
+            "/runepool/mongo",
+            get(get_runepool_units_history_from_mongodb),
+        )
+        .route(
+            "/runepool/rocks",
+            get(get_runepool_units_history_from_rocksdb),
+        )
+        .route(
+            "/runepool/level",
+            get(get_runepool_units_history_from_leveldb),
+        );
 
-    let iter = db.iterator(rocksdb::IteratorMode::Start);
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let listener = TcpListener::bind(addr).await.unwrap();
 
-    for item in iter {
-        let (_, value) = item?;
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
-        let interval: RunepoolUnitsInterval = serde_json::from_slice(&value)?;
-
-        // Apply filters
-        if let (Some(start), Some(end)) = (start_time, end_time) {
-            if interval.start_time < start || interval.end_time > end {
-                continue;
-            }
-        }
-
-        if let Some(min_units) = min_units {
-            if interval.units <= min_units {
-                continue;
-            }
-        }
-
-        // Handle offset
-        if skipped < offset {
-            skipped += 1;
-            continue;
-        }
-
-        results.push(interval);
-
-        if results.len() >= limit as usize {
-            break;
-        }
-    }
-
-    log_db_operation_metrics(
-        &format!("read_intervals_{}_records", results.len()),
-        start_time_metric,
-    );
-
-    metrics.finish();
-    Ok(results)
+    axum::serve(listener, app.into_make_service())
+        .await
+        .unwrap();
 }

@@ -3,7 +3,7 @@ use crate::core::models::common::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE};
 use crate::core::models::runepool_units_history::{
     MetaStats, RunepoolUnitsHistoryQueryParams, RunepoolUnitsHistoryResponse,
 };
-use crate::services::repository::runepool::get_runepool_units_history_leveldb;
+use crate::services::jobs::get_level::get_runepool_units_history_leveldb;
 use axum::http::StatusCode;
 use axum::{extract::Query, response::IntoResponse, Json};
 use serde_json::json;

@@ -68,7 +68,7 @@ pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
         .await?;
 
     // Store static MONGO_CLIENT look above
-    if let Err(_) = MONGO_CLIENT.set(client) {
+    if let Err(_e) = MONGO_CLIENT.set(client) {
         error!("Failed to set MongoDB client");
         return Err(mongodb::error::Error::from(std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -86,7 +86,7 @@ pub async fn connect_rocksdb(url: &str) -> std::result::Result<(), anyhow::Error
 
     match rocksdb::DB::open(&options, url) {
         Ok(db) => {
-            if let Err(_) = ROCKS_DB.set(Arc::new(db)) {
+            if let Err(_e) = ROCKS_DB.set(Arc::new(db)) {
                 error!("Failed to set RocksDB instance");
                 return Err(anyhow::anyhow!("Failed to initialize RocksDB"));
             }
@@ -101,8 +101,7 @@ pub async fn connect_rocksdb(url: &str) -> std::result::Result<(), anyhow::Error
 }
 
 pub async fn connect_leveldb(url: &str) -> std::result::Result<(), anyhow::Error> {
-    let mut opt = rusty_leveldb::Options::default();
-    opt.create_if_missing = true;
+    let opt: rusty_leveldb::Options = rusty_leveldb::Options::default();
 
     match rusty_leveldb::DB::open(url, opt) {
         Ok(db) => {

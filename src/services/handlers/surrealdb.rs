@@ -2,9 +2,9 @@ use crate::core::models::common::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE};
 use crate::core::models::runepool_units_history::{
     MetaStats, RunepoolUnitsHistoryQueryParams, RunepoolUnitsHistoryResponse,
 };
+use crate::services::jobs::get_surreal::get_runepool_units_history_surrealdb;
 use axum::http::StatusCode;
 
-use crate::services::repository::runepool::{self};
 use axum::Json;
 use axum::{extract::Query, response::IntoResponse};
 use serde_json::json;
@@ -23,7 +23,7 @@ pub async fn get_runepool_units_history_from_surrealdb(
         "ASC"
     };
 
-    match runepool::get_runepool_units_history_surrealdb(
+    match get_runepool_units_history_surrealdb(
         limit,
         offset,
         date_range.map(|(start, _)| start),

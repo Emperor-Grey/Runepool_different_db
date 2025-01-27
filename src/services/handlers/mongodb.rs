@@ -2,9 +2,9 @@ use crate::core::models::common::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE};
 use crate::core::models::runepool_units_history::{
     MetaStats, RunepoolUnitsHistoryQueryParams, RunepoolUnitsHistoryResponse,
 };
+use crate::services::jobs::get_mongo::get_runepool_units_history_mongodb;
 use axum::http::StatusCode;
 
-use crate::services::repository::runepool::get_runepool_units_history_mongodb;
 use axum::Json;
 use axum::{extract::Query, response::IntoResponse};
 use serde_json::json;

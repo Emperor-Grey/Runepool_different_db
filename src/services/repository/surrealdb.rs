@@ -1,6 +1,7 @@
 use crate::config::connect::DB;
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
 use crate::utils::metrics::{DatabaseOperation, DatabaseType, OperationMetrics};
+
 // Store in SurrealDB
 pub async fn store_surreal_intervals(
     intervals: Vec<RunepoolUnitsInterval>,

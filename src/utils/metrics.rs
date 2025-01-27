@@ -92,10 +92,8 @@ fn write_to_metrics_file(message: &str) -> std::io::Result<()> {
         {
             writeln!(file, "\nWRITE OPERATIONS: \n")?;
         }
-    } else if message.contains("read") {
-        if !message.contains("READ OPERATIONS:") {
-            writeln!(file, "\nREAD OPERATIONS: \n")?;
-        }
+    } else if message.contains("read") && !message.contains("READ OPERATIONS:") {
+        writeln!(file, "\nREAD OPERATIONS: \n")?;
     }
 
     writeln!(file, "[{}] {}", timestamp, message)?;
