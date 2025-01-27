@@ -42,7 +42,7 @@ pub async fn store_postgres_intervals(
         )
         .execute(pool)
         .await?;
-        
+
         if res.rows_affected() > 0 {
             stored_count += 1;
         }
@@ -76,10 +76,10 @@ pub async fn store_postgres_intervals(
 //             .count
 //             .unwrap_or(0)
 //                 > 0;
-    
+
 //         if !exists {
 //             sqlx::query!(
-//                 "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units) 
+//                 "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units)
 //                  VALUES ($1, $2, $3, $4)",
 //                 convert_datetime(interval.start_time),
 //                 convert_datetime(interval.end_time),

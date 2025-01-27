@@ -56,11 +56,9 @@ pub async fn connect_db() -> Result<()> {
 
 pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
     let mut client_options = ClientOptions::parse(url).await?;
-
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
     client_options.server_api = Some(server_api);
-
-    // Create the client
+    
     let client = MongoClient::with_options(client_options)?;
 
     // Test the connection
@@ -69,7 +67,7 @@ pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
         .run_command(doc! {"ping": 1})
         .await?;
 
-    // Store the client in the static MONGO_CLIENT
+    // Store static MONGO_CLIENT look above
     if let Err(_) = MONGO_CLIENT.set(client) {
         error!("Failed to set MongoDB client");
         return Err(mongodb::error::Error::from(std::io::Error::new(
@@ -82,17 +80,22 @@ pub async fn connect_mongodb(url: &str) -> mongodb::error::Result<()> {
     Ok(())
 }
 
-pub async fn connect_rocksdb(url: &str) {
+pub async fn connect_rocksdb(url: &str) -> std::result::Result<(), anyhow::Error> {
     let mut options = rocksdb::Options::default();
     options.create_if_missing(true);
 
     match rocksdb::DB::open(&options, url) {
-        Ok(_db) => {
+        Ok(db) => {
+            if let Err(_) = ROCKS_DB.set(Arc::new(db)) {
+                error!("Failed to set RocksDB instance");
+                return Err(anyhow::anyhow!("Failed to initialize RocksDB"));
+            }
             info!("Successfully connected to RocksDB at {}", url);
-            // Example: db.put(b"key", b"value").unwrap();
+            Ok(())
         }
         Err(e) => {
             error!("Failed to connect to RocksDB at {}: {}", url, e);
+            Err(anyhow::anyhow!("Failed to connect to RocksDB: {}", e))
         }
     }
 }
@@ -121,8 +124,8 @@ pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
 
     tracing::info!("Connected to PostgreSQL...");
     sqlx::migrate!("./migrations").run(&pool).await?;
-    
-    // Test the connection with a simple query
+
+    // Test the connection (simple query test cuz i can't write test's)
     sqlx::query("SELECT 1").fetch_one(&pool).await?;
 
     match PG_POOL.set(pool.clone()) {

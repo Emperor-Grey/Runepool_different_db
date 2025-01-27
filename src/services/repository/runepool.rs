@@ -201,10 +201,9 @@ pub async fn store_intervals(intervals: Vec<RunepoolUnitsInterval>) -> Result<()
                 }
             }
         } else {
-            Ok(())
+            Ok(()) // This silently succeeds when RocksDB is not initialized!
         }
     });
-
     let level_task = tokio::spawn(async move {
         if let Some(db) = LEVEL_DB.get() {
             match store_level_intervals(db.clone(), intervals_clone4).await {
