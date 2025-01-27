@@ -6,110 +6,17 @@ use crate::core::models::runepool_units_history::{
 };
 use crate::services::repository::runepool::{self};
 use crate::utils::metrics::{
-    DatabaseOperation, DatabaseType, OperationMetrics, log_db_operation_metrics,
+    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
 };
 use anyhow::Result;
-use axum::Json;
 use axum::http::StatusCode;
+use axum::Json;
 use axum::{extract::Query, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde_json;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-
-pub async fn _get_runepool_units_history_from_rocksdb(
-    Query(params): Query<RunepoolUnitsHistoryQueryParams>,
-) -> impl IntoResponse {
-    let limit = params.limit.unwrap_or(DEFAULT_PAGE_SIZE).min(MAX_PAGE_SIZE);
-    let offset = params.page.unwrap_or(0) * limit;
-
-    let date_range = params.parse_date_range();
-    let _sort_field = params.get_sort_field();
-    let _sort_order = if params.order.as_deref() == Some("desc") {
-        "DESC"
-    } else {
-        "ASC"
-    };
-
-    let db = ROCKS_DB.get().expect("RocksDB not initialized").clone();
-
-    match runepool::_get_runepool_units_history_rocksdb(
-        db,
-        limit,
-        offset,
-        date_range.map(|(start, _)| start),
-        date_range.map(|(_, end)| end),
-        params.units_gt,
-    )
-    .await
-    {
-        Ok(intervals) => {
-            if intervals.is_empty() {
-                return Json(json!({
-                    "success": true,
-                    "data": "no data found in the database for the given params"
-                }))
-                .into_response();
-            }
-
-            let meta_stats = MetaStats {
-                start_time: intervals[0].start_time,
-                end_time: intervals[intervals.len() - 1].end_time,
-                start_count: intervals[0].count,
-                end_count: intervals[intervals.len() - 1].count,
-                start_units: intervals[0].units,
-                end_units: intervals[intervals.len() - 1].units,
-            };
-
-            Json(RunepoolUnitsHistoryResponse {
-                intervals,
-                meta_stats,
-            })
-            .into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": format!("Database error: {}", e)
-            })),
-        )
-            .into_response(),
-    }
-}
-
-// RocksDB Implementation
-async fn store_rocks_intervals(
-    db: Arc<rocksdb::DB>,
-    intervals: Vec<RunepoolUnitsInterval>,
-) -> Result<usize, anyhow::Error> {
-    let metrics = OperationMetrics::new(
-        DatabaseType::RocksDB,
-        DatabaseOperation::Write,
-        intervals.len(),
-        "runepool units".to_string(),
-    );
-
-    let mut stored_count = 0;
-    for interval in intervals {
-        let key = format!(
-            "{}:{}",
-            interval.start_time.timestamp(),
-            interval.end_time.timestamp()
-        );
-
-        // Check if record exists
-        if db.get(key.as_bytes())?.is_none() {
-            let value = serde_json::to_vec(&interval)?;
-            db.put(key.as_bytes(), value)?;
-            stored_count += 1;
-        }
-    }
-
-    metrics.finish();
-    Ok(stored_count)
-}
 
 pub async fn get_runepool_units_history_rocksdb(
     db: Arc<rocksdb::DB>,

@@ -27,7 +27,7 @@ mod timestamp_serialization {
 }
 
 mod u64_serialization {
-    use serde::{Deserialize, Deserializer, Serializer, de};
+    use serde::{de, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
     where

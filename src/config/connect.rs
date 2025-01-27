@@ -1,20 +1,20 @@
 use mongodb::{
-    Client as MongoClient,
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion},
+    Client as MongoClient,
 };
 use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
     env,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use surrealdb::{
-    Result, Surreal,
     engine::remote::ws::{Client, Wss},
     opt::auth::Root,
+    Result, Surreal,
 };
 use tracing::{error, info};
 
@@ -109,20 +109,25 @@ pub async fn connect_leveldb(url: &str) {
         }
     }
 }
-
 pub async fn initialize_pg_pool(url: &str) -> sqlx::Result<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(3))
+        .min_connections(1)
+        .max_lifetime(Some(Duration::from_secs(30 * 60))) // 30 minutes
+        .idle_timeout(Some(Duration::from_secs(10 * 60))) // 10 minutes
         .connect(url)
-        .await
-        .expect("Failed to connect to database");
+        .await?;
 
     tracing::info!("Connected to PostgreSQL...");
 
-    PG_POOL
-        .set(pool.clone())
-        .expect("PG_POOL already initialized");
+    // Test the connection with a simple query
+    sqlx::query("SELECT 1").fetch_one(&pool).await?;
 
-    Ok(pool)
+    match PG_POOL.set(pool.clone()) {
+        Ok(_) => Ok(pool),
+        Err(_) => Err(sqlx::Error::Configuration(
+            "Failed to initialize PG_POOL".into(),
+        )),
+    }
 }

@@ -1,10 +1,10 @@
 use crate::config::connect::{DB, LEVEL_DB, MONGO_CLIENT, PG_POOL, ROCKS_DB};
 use crate::core::models::runepool_units_history::RunepoolUnitsInterval;
 use crate::utils::metrics::{
-    DatabaseOperation, DatabaseType, OperationMetrics, log_db_operation_metrics,
+    log_db_operation_metrics, DatabaseOperation, DatabaseType, OperationMetrics,
 };
 use anyhow::Result;
-use bson::{Document, doc};
+use bson::{doc, Document};
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use mongodb::options::FindOptions;
@@ -14,95 +14,39 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio;
 
-fn convert_datetime(dt: DateTime<Utc>) -> OffsetDateTime {
-    OffsetDateTime::from_unix_timestamp(dt.timestamp()).expect("Valid timestamp")
-}
+use super::mongodb::store_mongo_intervals;
+use super::postgres::store_postgres_intervals;
+use super::surrealdb::store_surreal_intervals;
 
-// Store in PostgreSQL
-async fn store_postgres_intervals(
-    pool: &PgPool,
-    intervals: &[RunepoolUnitsInterval],
-) -> sqlx::Result<usize> {
-    let metrics = OperationMetrics::new(
-        DatabaseType::Postgres,
-        DatabaseOperation::Write,
-        intervals.len(),
-        "runepool units".to_string(),
-    );
-
-    let mut stored_count = 0;
-    for interval in intervals {
-        // Check if record exists
-        let exists = sqlx::query!(
-            "SELECT COUNT(*) FROM runepool_unit_intervals WHERE start_time = $1 AND end_time = $2",
-            convert_datetime(interval.start_time),
-            convert_datetime(interval.end_time)
-        )
-        .fetch_one(pool)
-        .await?
-        .count
-        .unwrap_or(0)
-            > 0;
-
-        if !exists {
-            sqlx::query!(
-                "INSERT INTO runepool_unit_intervals (start_time, end_time, count, units) 
-                 VALUES ($1, $2, $3, $4)",
-                convert_datetime(interval.start_time),
-                convert_datetime(interval.end_time),
-                interval.count as i64,
-                interval.units as i64
-            )
-            .execute(pool)
-            .await?;
-            stored_count += 1;
-        }
-    }
-
-    metrics.finish();
-    Ok(stored_count)
-}
-
-// Store in SurrealDB
-async fn store_surreal_intervals(
+pub async fn store_rocks_intervals(
+    db: Arc<rocksdb::DB>,
     intervals: Vec<RunepoolUnitsInterval>,
-) -> surrealdb::Result<usize> {
+) -> Result<(), anyhow::Error> {
     let metrics = OperationMetrics::new(
-        DatabaseType::SurrealDB,
+        DatabaseType::RocksDB,
         DatabaseOperation::Write,
         intervals.len(),
         "runepool units".to_string(),
     );
 
-    let mut stored_count = 0;
     for interval in intervals {
-        let existing: Option<RunepoolUnitsInterval> = DB
-            .query(
-                "SELECT * FROM runepool_unit_intervals WHERE startTime = $start AND endTime = $end",
-            )
-            .bind(("start", interval.start_time))
-            .bind(("end", interval.end_time))
-            .await?
-            .take(0)?;
+        let key = format!(
+            "{}:{}",
+            interval.start_time.timestamp(),
+            interval.end_time.timestamp()
+        );
 
-        if existing.is_none() {
-            let _: Option<RunepoolUnitsInterval> = DB
-                .create("runepool_unit_intervals")
-                .content(interval)
-                .await?;
-            stored_count += 1;
+        // Check if record exists
+        if db.get(key.as_bytes())?.is_none() {
+            let value = serde_json::to_vec(&interval)?;
+            db.put(key.as_bytes(), value)?;
         }
     }
 
-    metrics.finish();
-    Ok(stored_count)
-}
+    // Ensure data is written to disk
+    db.flush()?;
 
-async fn store_rocks_intervals(
-    _db: Arc<rocksdb::DB>,
-    _intervals: Vec<RunepoolUnitsInterval>,
-) -> Result<(), anyhow::Error> {
-    // ... implementation ...
+    metrics.finish();
     Ok(())
 }
 
@@ -114,48 +58,6 @@ async fn store_level_intervals(
     Ok(())
 }
 
-// Store in MongoDB
-async fn store_mongo_intervals(
-    intervals: Vec<RunepoolUnitsInterval>,
-) -> Result<usize, mongodb::error::Error> {
-    let metrics = OperationMetrics::new(
-        DatabaseType::MongoDB,
-        DatabaseOperation::Write,
-        intervals.len(),
-        "runepool units".to_string(),
-    );
-
-    let client = MONGO_CLIENT.get().expect("MongoDB client not initialized");
-    let db = client.database("runepool");
-    let collection = db.collection::<Document>("runepool_unit_intervals");
-
-    let mut stored_count = 0;
-    for interval in intervals {
-        // Check if record exists
-        let filter = doc! {
-            "start_time": interval.start_time,
-            "end_time": interval.end_time
-        };
-
-        let exists = collection.find_one(filter.clone()).await?;
-
-        if exists.is_none() {
-            let doc = doc! {
-                "start_time": interval.start_time,
-                "end_time": interval.end_time,
-                "count": interval.count as i64,
-                "units": interval.units as i64,
-                "created_at": Utc::now()
-            };
-
-            collection.insert_one(doc).await?;
-            stored_count += 1;
-        }
-    }
-
-    metrics.finish();
-    Ok(stored_count)
-}
 pub async fn get_runepool_units_history_mongodb(
     limit: u32,
     offset: u32,
@@ -436,7 +338,7 @@ pub async fn get_runepool_units_history_postgres(
     Ok(result)
 }
 
-pub async fn _get_runepool_units_history_rocksdb(
+pub async fn get_runepool_units_history_rocksdb(
     db: Arc<rocksdb::DB>,
     limit: u32,
     _offset: u32,

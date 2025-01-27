@@ -1,15 +1,17 @@
 #![allow(unused, dead_code)]
 use api::server::fetch::fetch_and_store_runepool_units_history;
-use axum::{Router, routing::get};
+use axum::{routing::get, Router};
 use config::connect::{
     connect_db, connect_leveldb, connect_mongodb, connect_rocksdb, initialize_pg_pool,
 };
 use dotenv::dotenv;
 use http::Method;
-use services::client::get_midgard_api_url;
 use services::handlers::mongodb::get_runepool_units_history_from_mongodb;
 use services::handlers::postgres::get_runepool_units_history_from_postgres;
 use services::handlers::surrealdb::get_runepool_units_history_from_surrealdb;
+use services::{
+    client::get_midgard_api_url, handlers::rocksdb::get_runepool_units_history_from_rocksdb,
+};
 use std::env;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -136,6 +138,10 @@ async fn start_server() {
         .route(
             "/runepool/mongo",
             get(get_runepool_units_history_from_mongodb),
+        )
+        .route(
+            "/runepool/rocks",
+            get(get_runepool_units_history_from_rocksdb),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
