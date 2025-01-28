@@ -21,8 +21,8 @@ To get started, follow these steps:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/Emperor-Grey/db-tester.git
-   cd db-tester
+   git clone https://github.com/Emperor-Grey/Runepool_different_db.git
+   cd Runepool_different_db
    ```
 
 2. Create a `.env` file in the root directory with the following environment variables for your database connection strings:
